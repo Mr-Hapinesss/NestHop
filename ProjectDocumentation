@@ -1,0 +1,126 @@
+# NestHop: System Architecture & Technical Documentation
+
+This technical document outlines the engineering blueprint, system architecture, and core workflows for NestHop—a hyper-focused full-stack web and mobile marketplace connecting landlords/caretakers with prospective tenants.
+
+---
+
+## 1. System Architecture Overview
+
+NestHop utilizes a decoupled **MERN Stack** architecture designed to support a web interface (React/Vite) and real-time communication protocols concurrently.
+
+```
+┌────────────────────────────────────────────────────────┐
+│                   NestHop Client                       │
+│     (React + TypeScript + Tailwind v4 + Vite)          │
+└───────────┬────────────────────────────▲───────────────┘
+            │ HTTP / REST                │ WebSockets
+            │ Requests                   │ (Socket.io-client)
+┌───────────▼────────────────────────────┴───────────────┐
+│                   NestHop Server                       │
+│        (Node.js + Express + Socket.io)                 │
+└───────────┬────────────────────────────────────────────┘
+            │ Mongoose ODM
+┌───────────▼────────────────────────────────────────────┐
+│                  Database Layer                        │
+│                 (MongoDB Atlas)                        │
+└────────────────────────────────────────────────────────┘
+
+```
+
+---
+
+## 2. Core Technical Workflows
+
+### A. The Registration & OTP Authentication Engine
+
+To prevent spam accounts while maintaining a low-barrier entry point, NestHop utilizes a zero-password, time-restricted One-Time Password (OTP) pipeline.
+
+```
+User Enters       Server Generates OTP       User Submits OTP
+Phone/Email ───►  (Valid for 2 Mins)   ───►  Within 2 Mins?
+                  & Creates Temp User        │        │
+                                             ▼ Yes    ▼ No
+                                         Account     Deny Access
+                                        Activated    (24hr TTL Cleanup)
+
+```
+
+1. **Initiation:** The user enters an email address or phone number on the authentication gateway.
+2. **Generation:** The server writes a temporary document to the `OTP` collection with a 2-minute expiration window, transmitting the code via email/SMS utilities.
+3. **Verification:**
+* **Success:** If a matching valid code is supplied within 120 seconds, the temporary user status shifts to verified, a JSON Web Token (JWT) is issued, and the session begins.
+* **Failure:** If an account fails validation and remains unverified, an asynchronous background worker or a MongoDB Time-To-Live (TTL) index permanently drops the unverified record 24 hours after creation.
+
+
+
+### B. Property Discovery & Geolocation Mapping
+
+The property hunting flow bridges structured categorization with geographic lookups.
+
+* **Database Queries:** Properties are indexed globally by geographic string regions and structural categories (e.g., `single room`, `1 bedroom`, `2 bedrooms`).
+* **Google Maps Integration:** Landlords drop a precise pin on an embedded map interface during creation, extracting exact coordinate pairs ($latitude, longitude$). When a tenant opens the **Detailed Post Page**, these coordinates initialize an instance of the Google Maps JavaScript API, pinpointing navigation data directly.
+
+### C. Real-Time Bidirectional Messaging
+
+Direct messaging bypasses traditional polling methods to minimize latency between buyers and sellers.
+
+* **Connection:** Upon successful login, the client establishes a persistent full-duplex TCP connection via `Socket.io-client`.
+* **State Management:** Active socket IDs are mapped against authenticated User IDs in memory or a distributed database state.
+* **Message Delivery:** When a user initiates a message, it fires a WebSocket event. The server saves the payload to the `Messages` collection and concurrently pushes the live payload directly to the recipient’s active socket channel.
+
+---
+
+## 3. Database Schema Blueprint
+
+```
+                          ┌──────────────────────┐
+                          │         User         │
+                          └──────────┬───────────┘
+                                     │ 1
+                                     │
+                                     │ 1..*
+                          ┌──────────▼───────────┐
+                          │       Listing        │
+                          └──────────┬───────────┘
+                                     │ 1
+                                     │
+                                     │ 0..*
+                          ┌──────────▼───────────┐
+                          │    SupportTicket     │
+                          └──────────────────────┘
+
+```
+
+### User Schema
+
+Stores core demographic profiles and role-based permissions.
+
+* `_id`: ObjectId
+* `contactIdentifier`: String (Unique email or phone number)
+* `role`: String (`'tenant'`, `'landlord'`, `'admin'`)
+* `isVerified`: Boolean
+* `isBanned`: Boolean
+
+### Listing Schema
+
+Maintains structural definitions and location arrays for properties.
+
+* `_id`: ObjectId
+* `creatorId`: ObjectId (References User)
+* `title`: String
+* `houseType`: String (`'single room'`, `'1 bedroom'`, etc.)
+* `locationName`: String
+* `coordinates`: `{ lat: Number, lng: Number }`
+* `images`: Array of Strings (Cloud storage asset URLs)
+* `sideNotes`: String
+
+---
+
+## 4. Administrative Control Layer
+
+The administrative layout acts as an overarching governance interface with explicit Role-Based Access Control (RBAC).
+
+* **Account Creation Guard:** New administrator accounts cannot be requested via standard public endpoints. An administrative account can only be instantiated or designated by an existing user who already possesses verified `admin` privileges within the database.
+* **Global Capabilities:**
+* **Metrics Panel:** Real-time metrics counters aggregate user registration rates, creator distributions, and open support tickets.
+* **Search & Destroy Operations:** Admins maintain lookup pipelines to query users dynamically by contact string. They hold sweeping global rights to wipe non-compliant property listings from the database or flags users as globally banned, immediate killing their active JWT session handshakes.

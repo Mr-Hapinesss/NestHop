@@ -1,0 +1,46 @@
+{
+  "compilerOptions": {
+    /* 1. Project & Environment Targets */
+    "target": "ESNext",                          
+    "module": "ESNext",                          
+    "moduleResolution": "bundler",                
+    "moduleDetection": "force",                  
+    "lib": ["DOM", "DOM.Iterable", "ESNext"],    
+    "jsx": "react-jsx",                          
+
+    /* 2. Type-Checking Engine & Strictness */
+    "strict": true,                              
+    "noImplicitAny": true,                       
+    "strictNullChecks": true,                   
+    "noUncheckedIndexedAccess": true,           
+    "exactOptionalPropertyTypes": true,         
+    "noImplicitOverride": true,                 
+    "noImplicitReturns": true,                  
+    "noFallthroughCasesInSwitch": true,         
+
+    /* 3. Compilation & Build Strategy */
+    "declaration": true,                        
+    "declarationMap": true,                     
+    "sourceMap": true,                       
+    "noEmit": true,                            
+    "incremental": true,                       
+
+    /* 4. Module & Path Configurations */
+    "allowImportingTsExtensions": true,        
+    "resolveJsonModule": true,                   
+    "isolatedModules": true,                    
+    "verbatimModuleSyntax": true,                
+    "noUncheckedSideEffectImports": true,        
+    
+    /* 5. Optimization & Performance Tuning */
+    "skipLibCheck": true,                       
+    "types": ["vite/client"]                     
+  },
+  "include": [
+    "src/**/*"                                   
+  ],
+  "exclude": [
+    "node_modules",                             
+    "dist"                                       
+  ]
+}
