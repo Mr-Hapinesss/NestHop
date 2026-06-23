@@ -275,7 +275,7 @@ const Landing: React.FC = () => {
       }}>
         <Logo size="sm" />
         <p style={{ fontFamily: "'Neuton', serif", fontSize: 13, color: 'var(--text-muted)' }}>
-          © 2025 NestHop. Made with ♥ in Kenya.
+          © 2025 NestHop. All rights reserved. 
         </p>
       </footer>
 
