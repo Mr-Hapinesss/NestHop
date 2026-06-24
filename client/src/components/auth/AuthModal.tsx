@@ -1,136 +1,103 @@
-import React, { useState, useRef, useEffect } from 'react';
-import { X, ArrowRight, RefreshCw, CheckCircle } from 'lucide-react';
+import React, { useState, useEffect, useRef } from 'react';
+import { X, ArrowRight, RefreshCw, CheckCircle, UserCircle } from 'lucide-react';
 import { useAuth } from '../../context/AuthContext';
 import { authService } from '../../services/auth.service';
-import { detectContactType, validateEmail, validatePhone } from '../../utils/helpers';
-import toast from 'react-hot-toast';
+import { detectContactType, HOUSE_TYPES } from '../../utils/helpers';
+import PhoneEmailInput from './PhoneEmailInput';
+import OTPInput from './OTPInput';
+import { toast } from '../ui/Toast';
 
 interface AuthModalProps {
   isOpen: boolean;
   onClose: () => void;
 }
 
-type Step = 'input' | 'name' | 'otp';
+type Step = 'contact' | 'name' | 'otp';
 
 const AuthModal: React.FC<AuthModalProps> = ({ isOpen, onClose }) => {
   const { login } = useAuth();
-  const [step, setStep] = useState<Step>('input');
+  const [step, setStep]       = useState<Step>('contact');
   const [contact, setContact] = useState('');
-  const [name, setName] = useState('');
-  const [isNewUser, setIsNewUser] = useState(false);
-  const [contactType, setContactType] = useState<'email' | 'phone' | null>(null);
-  const [otp, setOtp] = useState(['', '', '', '', '', '']);
+  const [name, setName]       = useState('');
+  const [role, setRole]       = useState<'tenant' | 'landlord'>('tenant');
+  const [isNew, setIsNew]     = useState(false);
+  const [otp, setOtp]         = useState(['', '', '', '', '', '']);
+  const [otpError, setOtpError] = useState(false);
   const [loading, setLoading] = useState(false);
   const [resendTimer, setResendTimer] = useState(0);
   const [expiresAt, setExpiresAt] = useState<number | null>(null);
-  const inputRefs = useRef<(HTMLInputElement | null)[]>([]);
   const timerRef = useRef<ReturnType<typeof setInterval>>();
 
+  const contactType = detectContactType(contact);
+
+  // Reset on close
   useEffect(() => {
     if (!isOpen) {
-      setStep('input');
-      setContact('');
-      setName('');
-      setOtp(['', '', '', '', '', '']);
-      setResendTimer(0);
+      setStep('contact'); setContact(''); setName('');
+      setOtp(['', '', '', '', '', '']); setOtpError(false);
+      setLoading(false); setResendTimer(0);
       clearInterval(timerRef.current);
     }
   }, [isOpen]);
 
+  // Countdown
   useEffect(() => {
-    if (resendTimer > 0) {
-      timerRef.current = setInterval(() => {
-        setResendTimer(prev => {
-          if (prev <= 1) { clearInterval(timerRef.current); return 0; }
-          return prev - 1;
-        });
-      }, 1000);
-    }
+    if (resendTimer <= 0) return;
+    timerRef.current = setInterval(() => {
+      setResendTimer(p => { if (p <= 1) { clearInterval(timerRef.current); return 0; } return p - 1; });
+    }, 1000);
     return () => clearInterval(timerRef.current);
   }, [resendTimer]);
 
-  const handleContactSubmit = async () => {
-    const type = detectContactType(contact);
-    if (!type) {
-      toast.error('Enter a valid email or Kenyan phone number');
-      return;
-    }
-    setContactType(type);
+  const sendOTP = async (nm?: string, rl?: string) => {
     setLoading(true);
     try {
-      const res = await authService.sendOTP(contact, type);
+      const res = await authService.sendOTP(contact, contactType!, nm || name, rl || role);
       if (res.success) {
         setExpiresAt(res.data.expiresAt);
         setResendTimer(120);
         setStep('otp');
-        toast.success('OTP sent!');
+        toast.success('Verification code sent!');
       }
     } catch (err: any) {
-      const msg = err.response?.data?.message || 'Failed to send OTP';
-      if (msg.includes('name') || msg.includes('new user')) {
-        setIsNewUser(true);
+      const msg: string = err.response?.data?.message || '';
+      if (msg.toLowerCase().includes('name')) {
+        setIsNew(true);
         setStep('name');
       } else {
-        toast.error(msg);
+        toast.error(msg || 'Failed to send code');
       }
     } finally {
       setLoading(false);
     }
   };
 
-  const handleNameSubmit = async () => {
-    if (!name.trim() || name.length < 2) {
-      toast.error('Enter your full name');
-      return;
-    }
+  const handleContactNext = async () => {
+    if (!contactType) { toast.error('Enter a valid email or phone number'); return; }
+    await sendOTP();
+  };
+
+  const handleNameNext = async () => {
+    if (!name.trim() || name.trim().length < 2) { toast.error('Enter your full name'); return; }
+    await sendOTP(name, role);
+  };
+
+  const handleVerify = async (code?: string) => {
+    const val = code || otp.join('');
+    if (val.length !== 6) { toast.error('Enter the 6-digit code'); return; }
     setLoading(true);
+    setOtpError(false);
     try {
-      const res = await authService.sendOTP(contact, contactType!, name);
-      if (res.success) {
-        setExpiresAt(res.data.expiresAt);
-        setResendTimer(120);
-        setStep('otp');
-        toast.success('OTP sent!');
-      }
-    } catch (err: any) {
-      toast.error(err.response?.data?.message || 'Failed to send OTP');
-    } finally {
-      setLoading(false);
-    }
-  };
-
-  const handleOTPChange = (index: number, value: string) => {
-    if (!/^\d*$/.test(value)) return;
-    const newOtp = [...otp];
-    newOtp[index] = value.slice(-1);
-    setOtp(newOtp);
-    if (value && index < 5) inputRefs.current[index + 1]?.focus();
-    if (newOtp.every(d => d) && newOtp.join('').length === 6) {
-      handleVerify(newOtp.join(''));
-    }
-  };
-
-  const handleOTPKeyDown = (index: number, e: React.KeyboardEvent) => {
-    if (e.key === 'Backspace' && !otp[index] && index > 0) {
-      inputRefs.current[index - 1]?.focus();
-    }
-  };
-
-  const handleVerify = async (otpValue?: string) => {
-    const code = otpValue || otp.join('');
-    if (code.length !== 6) { toast.error('Enter the 6-digit code'); return; }
-    setLoading(true);
-    try {
-      const res = await authService.verifyOTP(contact, code);
+      const res = await authService.verifyOTP(contact, val);
       if (res.success) {
         login(res.data.token, res.data.user);
-        toast.success(`Welcome${res.data.user.name ? ', ' + res.data.user.name : ''}!`);
+        toast.success(`Welcome${res.data.user.name ? ', ' + res.data.user.name.split(' ')[0] : ''}! 🎉`);
         onClose();
       }
     } catch (err: any) {
-      toast.error(err.response?.data?.message || 'Invalid OTP');
+      setOtpError(true);
       setOtp(['', '', '', '', '', '']);
-      inputRefs.current[0]?.focus();
+      toast.error(err.response?.data?.message || 'Invalid code');
     } finally {
       setLoading(false);
     }
@@ -138,219 +105,152 @@ const AuthModal: React.FC<AuthModalProps> = ({ isOpen, onClose }) => {
 
   const handleResend = async () => {
     if (resendTimer > 0) return;
-    setLoading(true);
-    try {
-      const res = await authService.sendOTP(contact, contactType!, isNewUser ? name : undefined);
-      if (res.success) {
-        setResendTimer(120);
-        setOtp(['', '', '', '', '', '']);
-        toast.success('New OTP sent!');
-      }
-    } catch (err: any) {
-      toast.error(err.response?.data?.message || 'Failed to resend');
-    } finally {
-      setLoading(false);
-    }
+    setOtp(['', '', '', '', '', '']);
+    setOtpError(false);
+    await sendOTP();
   };
 
   if (!isOpen) return null;
+
+  const titles: Record<Step, { h: string; sub: string }> = {
+    contact: { h: 'Welcome to NestHop', sub: 'Enter your email or phone to continue' },
+    name:    { h: 'Create your account', sub: 'Tell us a bit about yourself' },
+    otp:     { h: 'Check your ' + (contactType === 'email' ? 'inbox' : 'messages'), sub: `We sent a 6-digit code to ${contact}` },
+  };
 
   return (
     <div style={{
       position: 'fixed', inset: 0, zIndex: 1000,
       display: 'flex', alignItems: 'center', justifyContent: 'center',
-      background: 'rgba(0,0,0,0.6)', backdropFilter: 'blur(8px)',
+      background: 'rgba(0,0,0,0.55)', backdropFilter: 'blur(6px)',
       padding: 20,
     }}>
       <div style={{
-        background: 'var(--bg-card)',
-        borderRadius: 20,
-        padding: 36,
-        width: '100%',
-        maxWidth: 400,
-        position: 'relative',
-        boxShadow: '0 32px 80px rgba(0,0,0,0.3)',
+        background: '#fff', borderRadius: 20, padding: '36px 32px',
+        width: '100%', maxWidth: 420, position: 'relative',
+        boxShadow: '0 32px 80px rgba(0,0,0,0.2)',
         animation: 'fadeInUp 0.3s ease',
       }}>
-        <button
-          onClick={onClose}
-          style={{
-            position: 'absolute', top: 16, right: 16,
-            background: 'var(--bg-secondary)', border: 'none',
-            borderRadius: 8, padding: 6, cursor: 'pointer', color: 'var(--text-primary)',
-          }}
-        >
-          <X size={16} />
+        <button onClick={onClose} style={{
+          position: 'absolute', top: 14, right: 14,
+          background: '#f3f4f6', border: 'none', borderRadius: 8,
+          width: 30, height: 30, display: 'flex', alignItems: 'center',
+          justifyContent: 'center', cursor: 'pointer', color: '#6b7280',
+        }}>
+          <X size={15} />
         </button>
 
-        {/* Logo */}
+        {/* Header */}
         <div style={{ marginBottom: 28 }}>
-          <div style={{ fontFamily: "'Archivo Black', sans-serif", fontSize: 22, color: '#4F252E', marginBottom: 4 }}>
-            {step === 'input' ? 'Welcome to NestHop' :
-             step === 'name' ? 'One last thing' : 'Verify your identity'}
+          <div style={{ fontFamily: "'Archivo Black', sans-serif", fontSize: 22, color: '#4F252E', marginBottom: 6 }}>
+            {titles[step].h}
           </div>
-          <div style={{ fontFamily: "'Neuton', serif", fontSize: 14, color: 'var(--text-secondary)' }}>
-            {step === 'input' ? 'Sign in or create an account to continue' :
-             step === 'name' ? 'Tell us your name to get started' :
-             `We sent a code to ${contact}`}
+          <div style={{ fontFamily: "'Neuton', serif", fontSize: 14, color: '#6b7280', lineHeight: 1.5 }}>
+            {titles[step].sub}
           </div>
+          {isNew && step === 'otp' && (
+            <div style={{ marginTop: 8, padding: '6px 12px', background: '#4F252E12', borderRadius: 8, fontFamily: "'Neuton', serif", fontSize: 12, color: '#4F252E' }}>
+              ✨ First time? OTP verification is only needed once.
+            </div>
+          )}
         </div>
 
-        {/* Input step */}
-        {step === 'input' && (
-          <div>
-            <div style={{ marginBottom: 16 }}>
-              <label style={{ display: 'block', fontFamily: "'Neuton', serif", fontSize: 13, color: 'var(--text-secondary)', marginBottom: 6 }}>
-                Email or Phone Number
-              </label>
-              <input
-                type="text"
-                value={contact}
-                onChange={e => setContact(e.target.value)}
-                onKeyDown={e => e.key === 'Enter' && handleContactSubmit()}
-                placeholder="you@example.com or +254700..."
-                style={{
-                  width: '100%', padding: '12px 14px', borderRadius: 10,
-                  border: '1.5px solid var(--border-color)',
-                  background: 'var(--bg-secondary)',
-                  color: 'var(--text-primary)', fontSize: 15,
-                  fontFamily: "'Neuton', serif", outline: 'none',
-                  transition: 'border-color 0.2s',
-                }}
-                onFocus={e => (e.target.style.borderColor = '#4F252E')}
-                onBlur={e => (e.target.style.borderColor = 'var(--border-color)')}
-                autoFocus
-              />
-            </div>
+        {/* STEP: contact */}
+        {step === 'contact' && (
+          <div style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
+            <PhoneEmailInput
+              value={contact}
+              onChange={setContact}
+              onEnter={handleContactNext}
+              disabled={loading}
+            />
             <button
-              onClick={handleContactSubmit}
-              disabled={loading || !contact}
-              style={{
-                width: '100%', padding: '14px', borderRadius: 12,
-                background: loading || !contact ? '#ccc' : '#4F252E',
-                color: '#FFF7C5', border: 'none', cursor: loading || !contact ? 'not-allowed' : 'pointer',
-                fontFamily: "'Archivo Black', sans-serif", fontSize: 15,
-                display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 8,
-                transition: 'all 0.2s',
-              }}
+              onClick={handleContactNext}
+              disabled={loading || !contactType}
+              style={btnStyle(!contactType || loading)}
             >
-              {loading ? 'Sending...' : 'Continue'}
+              {loading ? 'Checking...' : 'Continue'}
               {!loading && <ArrowRight size={16} />}
             </button>
+            <p style={{ textAlign: 'center', fontFamily: "'Neuton', serif", fontSize: 12, color: '#9ca3af' }}>
+              New users will be asked to verify once. Returning users sign in instantly.
+            </p>
           </div>
         )}
 
-        {/* Name step */}
+        {/* STEP: name (new users only) */}
         {step === 'name' && (
-          <div>
-            <div style={{ marginBottom: 16 }}>
-              <label style={{ display: 'block', fontFamily: "'Neuton', serif", fontSize: 13, color: 'var(--text-secondary)', marginBottom: 6 }}>
-                Your Full Name
-              </label>
-              <input
-                type="text"
-                value={name}
-                onChange={e => setName(e.target.value)}
-                onKeyDown={e => e.key === 'Enter' && handleNameSubmit()}
-                placeholder="Jane Mwangi"
-                style={{
-                  width: '100%', padding: '12px 14px', borderRadius: 10,
-                  border: '1.5px solid var(--border-color)',
-                  background: 'var(--bg-secondary)',
-                  color: 'var(--text-primary)', fontSize: 15,
-                  fontFamily: "'Neuton', serif", outline: 'none',
-                }}
-                onFocus={e => (e.target.style.borderColor = '#4F252E')}
-                onBlur={e => (e.target.style.borderColor = 'var(--border-color)')}
-                autoFocus
-              />
+          <div style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
+            <div>
+              <label style={labelStyle}>Full Name</label>
+              <div style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '12px 14px', border: '1.5px solid #d1d5db', borderRadius: 12, background: '#fff' }}>
+                <UserCircle size={17} color="#9ca3af" />
+                <input
+                  type="text"
+                  value={name}
+                  onChange={e => setName(e.target.value)}
+                  onKeyDown={e => e.key === 'Enter' && handleNameNext()}
+                  placeholder="Jane Mwangi"
+                  autoFocus
+                  style={{ flex: 1, border: 'none', outline: 'none', fontFamily: "'Neuton', serif", fontSize: 15, background: 'transparent', color: '#1a1a1a' }}
+                />
+              </div>
             </div>
 
-            <div style={{ marginBottom: 16 }}>
-              <label style={{ display: 'block', fontFamily: "'Neuton', serif", fontSize: 13, color: 'var(--text-secondary)', marginBottom: 6 }}>
-                I am a...
-              </label>
-              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 8 }}>
-                {(['tenant', 'landlord'] as const).map(role => (
-                  <button key={role} style={{
-                    padding: '10px', borderRadius: 10,
-                    border: '1.5px solid #4F252E',
-                    background: 'transparent',
-                    color: '#4F252E', cursor: 'pointer',
-                    fontFamily: "'Neuton', serif", fontSize: 14, textTransform: 'capitalize',
-                  }}>{role}</button>
+            <div>
+              <label style={labelStyle}>I am a...</label>
+              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 10 }}>
+                {(['tenant', 'landlord'] as const).map(r => (
+                  <button
+                    key={r}
+                    onClick={() => setRole(r)}
+                    style={{
+                      padding: '12px 10px', borderRadius: 10,
+                      border: `2px solid ${role === r ? '#4F252E' : '#e5e7eb'}`,
+                      background: role === r ? '#4F252E08' : '#fff',
+                      color: role === r ? '#4F252E' : '#6b7280',
+                      fontFamily: "'Neuton', serif", fontSize: 14,
+                      textTransform: 'capitalize', cursor: 'pointer',
+                      transition: 'all 0.15s',
+                      fontWeight: role === r ? 700 : 400,
+                    }}
+                  >
+                    {r === 'tenant' ? '🏠 Tenant' : '🏢 Landlord'}
+                  </button>
                 ))}
               </div>
             </div>
 
-            <button
-              onClick={handleNameSubmit}
-              disabled={loading || !name.trim()}
-              style={{
-                width: '100%', padding: '14px', borderRadius: 12,
-                background: loading || !name.trim() ? '#ccc' : '#4F252E',
-                color: '#FFF7C5', border: 'none', cursor: 'pointer',
-                fontFamily: "'Archivo Black', sans-serif", fontSize: 15,
-                display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 8,
-              }}
-            >
-              {loading ? 'Sending OTP...' : 'Get Verification Code'}
+            <button onClick={handleNameNext} disabled={loading || !name.trim()} style={btnStyle(!name.trim() || loading)}>
+              {loading ? 'Sending code...' : 'Get Verification Code'}
               {!loading && <ArrowRight size={16} />}
             </button>
           </div>
         )}
 
-        {/* OTP step */}
+        {/* STEP: OTP */}
         {step === 'otp' && (
-          <div>
-            <div style={{ display: 'flex', gap: 10, justifyContent: 'center', marginBottom: 24 }}>
-              {otp.map((digit, i) => (
-                <input
-                  key={i}
-                  ref={el => { inputRefs.current[i] = el; }}
-                  type="text"
-                  inputMode="numeric"
-                  maxLength={1}
-                  value={digit}
-                  onChange={e => handleOTPChange(i, e.target.value)}
-                  onKeyDown={e => handleOTPKeyDown(i, e)}
-                  style={{
-                    width: 48, height: 56, textAlign: 'center',
-                    borderRadius: 12, border: '2px solid',
-                    borderColor: digit ? '#4F252E' : 'var(--border-color)',
-                    background: 'var(--bg-secondary)',
-                    color: 'var(--text-primary)',
-                    fontFamily: "'Archivo Black', sans-serif", fontSize: 22,
-                    outline: 'none', transition: 'border-color 0.2s',
-                  }}
-                  onFocus={e => (e.target.style.borderColor = '#4F252E')}
-                  onBlur={e => (e.target.style.borderColor = digit ? '#4F252E' : 'var(--border-color)')}
-                />
-              ))}
-            </div>
+          <div style={{ display: 'flex', flexDirection: 'column', gap: 20 }}>
+            <OTPInput
+              value={otp}
+              onChange={setOtp}
+              onComplete={handleVerify}
+              disabled={loading}
+              error={otpError}
+            />
 
             {expiresAt && (
-              <p style={{
-                textAlign: 'center', fontFamily: "'Neuton', serif", fontSize: 12,
-                color: 'var(--text-muted)', marginBottom: 16,
-              }}>
-                Code expires in {Math.max(0, Math.floor((expiresAt - Date.now()) / 60000))}m
+              <p style={{ textAlign: 'center', fontFamily: "'Neuton', serif", fontSize: 12, color: '#9ca3af' }}>
+                Code expires in {Math.max(0, Math.floor((expiresAt - Date.now()) / 60000))} min
               </p>
             )}
 
             <button
               onClick={() => handleVerify()}
               disabled={loading || otp.some(d => !d)}
-              style={{
-                width: '100%', padding: '14px', borderRadius: 12,
-                background: loading || otp.some(d => !d) ? '#ccc' : '#4F252E',
-                color: '#FFF7C5', border: 'none', cursor: 'pointer',
-                fontFamily: "'Archivo Black', sans-serif", fontSize: 15,
-                display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 8,
-                marginBottom: 12,
-              }}
+              style={btnStyle(loading || otp.some(d => !d))}
             >
-              {loading ? 'Verifying...' : 'Verify Code'}
+              {loading ? 'Verifying...' : 'Verify & Sign In'}
               {!loading && <CheckCircle size={16} />}
             </button>
 
@@ -358,22 +258,36 @@ const AuthModal: React.FC<AuthModalProps> = ({ isOpen, onClose }) => {
               onClick={handleResend}
               disabled={resendTimer > 0 || loading}
               style={{
-                width: '100%', padding: '10px', borderRadius: 10,
-                background: 'transparent', border: 'none',
-                color: resendTimer > 0 ? 'var(--text-muted)' : '#4F252E',
-                cursor: resendTimer > 0 ? 'not-allowed' : 'pointer',
+                background: 'none', border: 'none',
+                color: resendTimer > 0 ? '#9ca3af' : '#4F252E',
                 fontFamily: "'Neuton', serif", fontSize: 13,
-                display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 6,
+                cursor: resendTimer > 0 ? 'not-allowed' : 'pointer',
+                display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 5,
               }}
             >
               <RefreshCw size={13} />
-              {resendTimer > 0 ? `Resend in ${resendTimer}s` : 'Resend OTP'}
+              {resendTimer > 0 ? `Resend in ${resendTimer}s` : 'Resend code'}
             </button>
           </div>
         )}
       </div>
     </div>
   );
+};
+
+const btnStyle = (disabled: boolean): React.CSSProperties => ({
+  width: '100%', padding: '14px', borderRadius: 12,
+  background: disabled ? '#e5e7eb' : '#4F252E',
+  color: disabled ? '#9ca3af' : '#FFF7C5',
+  border: 'none', cursor: disabled ? 'not-allowed' : 'pointer',
+  fontFamily: "'Archivo Black', sans-serif", fontSize: 15,
+  display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 8,
+  transition: 'all 0.2s',
+});
+
+const labelStyle: React.CSSProperties = {
+  display: 'block', fontFamily: "'Neuton', serif",
+  fontSize: 13, color: '#6b7280', marginBottom: 6,
 };
 
 export default AuthModal;

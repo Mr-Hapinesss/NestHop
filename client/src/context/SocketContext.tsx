@@ -2,13 +2,13 @@ import React, { createContext, useContext, useEffect, useRef, useState } from 'r
 import { io, Socket } from 'socket.io-client';
 import { useAuth } from './AuthContext';
 
-interface SocketContextType {
+export interface SocketContextType {
   socket: Socket | null;
   isConnected: boolean;
   onlineUsers: Set<string>;
 }
 
-const SocketContext = createContext<SocketContextType>({
+export const SocketContext = createContext<SocketContextType>({
   socket: null,
   isConnected: false,
   onlineUsers: new Set(),
