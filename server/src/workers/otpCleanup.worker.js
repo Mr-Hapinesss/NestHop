@@ -19,7 +19,7 @@ function startOTPCleanupWorker() {
     }
   });
 
-  console.log('⏰ OTP cleanup worker started (runs every hour)');
+  console.log(' OTP cleanup worker started (runs every hour)');
 }
 
 module.exports = { startOTPCleanupWorker };

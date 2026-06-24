@@ -13,7 +13,7 @@ async function connectDB() {
     console.log('MongoDB connected successfully');
 
     mongoose.connection.on('disconnected', () => {
-      console.warn('⚠️  MongoDB disconnected. Reconnecting...');
+      console.warn(' MongoDB disconnected. Reconnecting...');
       isConnected = false;
     });
   } catch (err) {

@@ -71,12 +71,13 @@ async function bootstrap() {
   // Background workers
   startOTPCleanupWorker();
 
+
   server.listen(PORT, () => {
     console.log(`
- NestHop Server running on port ${PORT}
- Client: ${CLIENT_URL}
- Socket.io: enabled
- Redis: caching active
+  NestHop Server running on http://localhost:${PORT}
+  Client: ${CLIENT_URL}
+  Socket.io: enabled
+  Redis: caching active
     `);
   });
 

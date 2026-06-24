@@ -47,7 +47,7 @@ function initSocket(httpServer) {
     handleChat(io, socket);
 
     socket.on('disconnect', () => {
-      console.log(`❌ Socket disconnected: ${socket.userId} (${socket.id})`);
+      console.log(` Socket disconnected: ${socket.userId} (${socket.id})`);
     });
 
     socket.on('error', (err) => {

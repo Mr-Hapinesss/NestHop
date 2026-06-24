@@ -39,7 +39,5 @@ userSchema.pre('save', function (next) {
   next();
 });
 
-userSchema.index({ email: 1 }, { sparse: true });
-userSchema.index({ phone: 1 }, { sparse: true });
 
 module.exports = mongoose.model('User', userSchema);

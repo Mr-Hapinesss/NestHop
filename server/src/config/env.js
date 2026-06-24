@@ -6,7 +6,7 @@ const required = [
 
 required.forEach(key => {
   if (!process.env[key]) {
-    console.error(`❌ Missing env var: ${key}`);
+    console.error(` Missing env var: ${key}`);
     process.exit(1);
   }
 });
@@ -15,7 +15,7 @@ module.exports = {
   PORT: process.env.PORT || 5000,
   MONGODB_URI: process.env.MONGODB_URI,
   JWT_SECRET: process.env.JWT_SECRET,
-  JWT_EXPIRES_IN: process.env.JWT_EXPIRES_IN || '7d',
+  JWT_EXPIRES_IN: process.env.JWT_EXPIRES_IN || '24h',
   REDIS_URL: process.env.REDIS_URL,
   CLOUDINARY_CLOUD_NAME: process.env.CLOUDINARY_CLOUD_NAME,
   CLOUDINARY_API_KEY: process.env.CLOUDINARY_API_KEY,
